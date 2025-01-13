@@ -1,0 +1,158 @@
+version: "3.8"
+services:
+  ##################
+  # POSTGRES
+  ##################
+  postgres:
+    container_name: ${NAME}_postgres
+    hostname: ${NAME}_postgres
+    tty: true
+    restart: always
+    ports:
+      - ${POSTGRES_PORT}:5432
+    build:
+      context: ${DOCKER_PATH}/postgres
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_ROOT_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - .:/docker-entrypoint-initdb.d
+      - v-db:${POSTGRES_DATA_PATH}
+    networks:
+      - app
+
+  ##################
+  # MONGODB
+  ##################
+  mongodb:
+    container_name: ${NAME}_mongodb
+    hostname: ${NAME}_mongodb
+    tty: true
+    ports:
+      - ${MONGO_PORT}:27017
+    build:
+      context: ${DOCKER_PATH}/mongo
+      dockerfile: Dockerfile
+    environment:
+      - MONGO_INITDB_DATABASE=${MONGO_DATABASE}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+    volumes:
+      - v-mongo:${MONGO_DATA_PATH}
+    networks:
+      - app
+
+  ##################
+  # RABBITMQ
+  ##################
+  rabbitmq:
+    container_name: ${NAME}_rabbitmq
+    hostname: ${NAME}_rabbitmq
+    tty: true
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+      - RABBITMQ_DEFAULT_VHOST=${RABBITMQ_VHOST}
+    build:
+      context: ${DOCKER_PATH}/rabbitmq
+      dockerfile: Dockerfile
+    ports:
+      - ${RABBITMQ_PORT_CLIENT}:5672
+      - ${RABBITMQ_PORT}:15672
+    volumes:
+      - ./${DOCKER_PATH}/${RABBITMQ_CONFIG_PATH}:/etc/rabbitmq/rabbitmq.conf:ro
+    networks:
+      - app
+
+  ##################
+  # NGINX
+  ##################
+  nginx:
+    container_name: ${NAME}_nginx
+    hostname: ${NAME}_nginx
+    restart: always
+    ports:
+      - ${HTTP_PORT}:80
+    build:
+      context: ${DOCKER_PATH}/nginx
+      dockerfile: Dockerfile
+    volumes:
+      - ./${DOCKER_PATH}/${HTTP_LOCAL_CONFIG_PATH}:${HTTP_CONTAINER_CONFIG_PATH}:ro
+      - ./${HTTP_LOCAL_PATH}:${HTTP_CONTAINER_PATH}
+    networks:
+      - app
+
+  ##################
+  # PHP-FPM
+  ##################
+  php-fpm:
+    container_name: ${NAME}_php-fpm
+    hostname: ${NAME}_php-fpm
+    tty: true
+    environment:
+      docker: "true"
+    extra_hosts:
+      - ${PHP_FPM_EXTRA_HOST}
+    build:
+      context: ${DOCKER_PATH}/php-fpm
+      dockerfile: Dockerfile
+      args:
+        - INSTALL_FAKETIME=false
+        - INSTALL_LOCALES_ADDITIONAL=false
+        - LOCALES_ADDITIONAL=${LOCALES_ADDITIONAL}
+        - LOCALE=${LOCALE_DEFAULT}
+        - TIMEZONE=${TIMEZONE_DEFAULT}
+        - http_proxy
+        - https_proxy
+        - no_proxy
+        - PUID=${PUID}
+        - PGID=${PGID}
+    env_file:
+      - ${DOCKER_PATH}/php-fpm/conf/xdebug.env
+    volumes:
+      - ./${APP_LOCAL_PATH}:${APP_CONTAINER_PATH}
+      - ./${DOCKER_PATH}/php-fpm/conf/php.ini:${PHP_FPM_CONFIG_PATH}:ro
+    networks:
+      - app
+    depends_on:
+      - nginx
+      - postgres
+      - mongodb
+      - rabbitmq
+
+  ##################
+  # DART-UI
+  ##################
+  dart-ui:
+    container_name: ${NAME}_dart-ui
+    hostname: ${NAME}_dart-ui
+    tty: true
+    ports:
+      - ${UI_HTTP_PORT}:80
+    build:
+      context: ${DOCKER_PATH}/dart-ui
+      dockerfile: Dockerfile
+    volumes:
+      - ./${UI_LOCAL_PATH}:${UI_CONTAINER_PATH}
+    networks:
+      - app
+    depends_on:
+      - php-fpm
+
+##################
+# NETWORKS
+##################
+networks:
+  app:
+    driver: 'bridge'
+
+##################
+# VOLUMES
+##################
+volumes:
+  v-db:
+  v-mongo:
+    driver: local
